@@ -1,3 +1,32 @@
+wayfire (0.9.0-5) unstable; urgency=medium
+
+  * Adopt package (Closes: #1076391)
+  * Workaround release based on upstream tracker-wlroots branch:
+    - This branch support wlroots 0.18, required for transition
+  * Based on 0.9.0-2:
+    - One patch from 0.9.0 to tracker-wlroots
+  * Drop the old patch cause it conflicts with this branch
+  * debian/patches/0001_version_requirement_workaround.patch:
+    - wf-config 0.10.0 is not released yet
+  * Update lintian-overrides
+
+ -- Don Xu <me@eipi.fun>  Wed, 18 Dec 2024 03:05:33 +0800
+
+wayfire (0.9.0-4) unstable; urgency=medium
+
+  * debian/patches: expand patches for upstream branch track-wlroots
+  * add debian/salsa-ci.yml
+
+ -- Johannes Schauer Marin Rodrigues <josch@debian.org>  Wed, 04 Dec 2024 13:59:44 +0100
+
+wayfire (0.9.0-3) unstable; urgency=medium
+
+  * QA upload.
+  * debian/rules: clean up subprojects directory (Closes: #1045910)
+  * debian/patches: add patch for compatibility with wlroots 0.18
+
+ -- Johannes Schauer Marin Rodrigues <josch@debian.org>  Sun, 24 Nov 2024 18:19:01 +0100
+
 wayfire (0.9.0-2) unstable; urgency=medium
 
   * QA upload.
