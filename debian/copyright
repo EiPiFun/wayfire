@@ -8,6 +8,7 @@ License: Expat
 
 Files: debian/*
 Copyright: 2022 Boyuan Yang <byang@debian.org>
+           2024 Don Xu <me@eipi.fun>
 License: Expat
 
 Files: wf-utils/*

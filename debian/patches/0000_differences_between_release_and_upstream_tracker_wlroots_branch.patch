@@ -1,0 +1,2024 @@
+Description: Differences between 0.9.0 and upstream tracker-wlroots branch
+ Try to package wayfire upon wlroots 0.18
+Author: Don Xu <me@eipi.fun>
+Origin: upstream (https://github.com/WayfireWM/wayfire/pull/2452)
+Forwarded: not-needed
+Applied-Upstream: commit:158ff3e
+Last-Update: 2024-12-18
+
+--- wayfire-0.9.0.orig/.github/workflows/ci.yaml
++++ wayfire-0.9.0/.github/workflows/ci.yaml
+@@ -7,7 +7,9 @@ jobs:
+     runs-on: ubuntu-latest
+     container: alpine:latest
+     steps:
+-    - run: apk --no-cache add git gcc g++ binutils pkgconf meson ninja musl-dev wayland-dev wayland-protocols libinput-dev libevdev-dev libxkbcommon-dev pixman-dev glm-dev libdrm-dev mesa-dev cairo-dev pango-dev eudev-dev libxml2-dev libseat-dev libxcb-dev xcb-util-wm-dev xwayland doctest doctest-dev cmake libdisplay-info-dev hwdata-dev nlohmann-json
++    - run: apk --no-cache add git gcc g++ binutils pkgconf meson ninja musl-dev wayland-protocols libinput-dev libevdev-dev libxkbcommon-dev pixman-dev glm-dev mesa-dev cairo-dev pango-dev eudev-dev libxml2-dev libseat-dev libxcb-dev xcb-util-wm-dev xwayland doctest doctest-dev cmake libdisplay-info-dev hwdata-dev nlohmann-json
++    - run: git clone https://gitlab.freedesktop.org/wayland/wayland && cd wayland && git checkout 1.23.0 && meson setup build -Ddocumentation=false -Dtests=false --prefix=/usr && ninja -C build && ninja -C build install && cd .. && rm -rf wayland
++    - run: git clone https://gitlab.freedesktop.org/mesa/drm && cd drm && meson setup build --prefix=/usr && ninja -C build && ninja -C build install && cd .. && rm -rf drm
+     - uses: actions/checkout@v1
+     - run: git config --global --add safe.directory /__w/wayfire/wayfire
+     - run: git submodule sync --recursive && git submodule update --init --force --recursive
+--- wayfire-0.9.0.orig/meson.build
++++ wayfire-0.9.0/meson.build
+@@ -2,7 +2,7 @@ project(
+ 	'wayfire',
+ 	'c',
+ 	'cpp',
+-	version: '0.9.0',
++	version: '0.10.0',
+ 	license: 'MIT',
+ 	meson_version: '>=0.63.0',
+ 	default_options: [
+@@ -42,11 +42,11 @@ if get_option('use_system_wlroots').disa
+ 
+ elif get_option('use_system_wlroots').enabled()
+ 	use_system_wlroots = true
+-	wlroots = dependency('wlroots', version: ['>=0.17.0', '<0.18.0'], required: true)
++	wlroots = dependency('wlroots-0.18', version: ['>=0.18.0', '<0.19.0'], required: true)
+ 
+ elif get_option('use_system_wlroots').auto()
+ 	message( 'SEARCHING FOR WLROOTS' )
+-	wlroots = dependency('wlroots', version: ['>=0.17.0', '<0.18.0'], required: false)
++	wlroots = dependency('wlroots-0.18', version: ['>=0.18.0', '<0.19.0'], required: false)
+ 	use_system_wlroots = true
+ 	if not wlroots.found()
+ 		use_system_wlroots = false
+--- wayfire-0.9.0.orig/metadata/animate.xml
++++ wayfire-0.9.0/metadata/animate.xml
+@@ -25,6 +25,14 @@
+ 				<value>fire</value>
+ 				<_name>Fire</_name>
+ 			</desc>
++			<desc>
++				<value>zap</value>
++				<_name>Zap</_name>
++			</desc>
++			<desc>
++				<value>spin</value>
++				<_name>Spin</_name>
++			</desc>
+ 		</option>
+ 		<option name="close_animation" type="string">
+ 			<_short>Close animation</_short>
+@@ -46,6 +54,31 @@
+ 				<value>fire</value>
+ 				<_name>Fire</_name>
+ 			</desc>
++			<desc>
++				<value>zap</value>
++				<_name>Zap</_name>
++			</desc>
++			<desc>
++				<value>spin</value>
++				<_name>Spin</_name>
++			</desc>
++		</option>
++		<option name="minimize_animation" type="string">
++			<_short>Minimze animation</_short>
++			<_long>Specifies the type of animation when minimizing a window.</_long>
++			<default>squeezimize</default>
++			<desc>
++				<value>none</value>
++				<_name>None</_name>
++			</desc>
++			<desc>
++				<value>zoom</value>
++				<_name>Zoom</_name>
++			</desc>
++			<desc>
++				<value>squeezimize</value>
++				<_name>Squeezimize</_name>
++			</desc>
+ 		</option>
+ 		<!-- Preferred animation -->
+ 		<option name="enabled_for" type="string">
+@@ -116,5 +149,25 @@
+ 			<_long>Sets the color of the fire effects, alpha is ignored</_long>
+ 			<default>#b22303ff</default>
+ 		</option>
++		<option name="squeezimize_duration" type="animation">
++			<_short>Squeezimize duration</_short>
++			<_long>Sets the duration of the squeezimize animation in milliseconds.</_long>
++			<default>150ms linear</default>
++		</option>
++		<option name="zap_duration" type="animation">
++			<_short>Zap duration</_short>
++			<_long>Sets the duration for the zap animation in milliseconds.</_long>
++			<default>250ms linear</default>
++		</option>
++		<option name="spin_duration" type="animation">
++			<_short>Spin duration</_short>
++			<_long>Sets the duration for the spin animation in milliseconds.</_long>
++			<default>250ms linear</default>
++		</option>
++		<option name="spin_rotations" type="int">
++			<_short>Spin rotations</_short>
++			<_long>Number of rotations for the spin animation. Negative values reverse the spin direction.</_long>
++			<default>1</default>
++		</option>
+ 	</plugin>
+ </wayfire>
+--- wayfire-0.9.0.orig/metadata/core.xml
++++ wayfire-0.9.0/metadata/core.xml
+@@ -88,5 +88,10 @@
+ 			<_long>Whether to pass buttons through to the client when switching the focus via clicking</_long>
+ 			<default>true</default>
+ 		</option>
++		<option name="exit" type="key">
++			<_short>Wayfire Shutdown</_short>
++			<_long>Calls the shutdown routines for wayfire.</_long>
++			<default>&lt;ctrl&gt; &lt;alt&gt; KEY_BACKSPACE</default>
++		</option>
+ 	</plugin>
+ </wayfire>
+--- wayfire-0.9.0.orig/metadata/extra-gestures.xml
++++ wayfire-0.9.0/metadata/extra-gestures.xml
+@@ -14,7 +14,7 @@
+ 		<option name="move_delay" type="int">
+ 			<_short>Start moving after</_short>
+ 			<_long>Amount of time in milliseconds to hold fingers before starting interactive move of the view.</_long>
+-			<default>500</default>
++			<default>750</default>
+ 			<min>1</min>
+ 			<max>10000</max>
+ 		</option>
+--- wayfire-0.9.0.orig/plugins/animate/animate.cpp
++++ wayfire-0.9.0/plugins/animate/animate.cpp
+@@ -8,6 +8,9 @@
+ #include "animate.hpp"
+ #include "system_fade.hpp"
+ #include "basic_animations.hpp"
++#include "squeezimize.hpp"
++#include "zap.hpp"
++#include "spin.hpp"
+ #include "fire/fire.hpp"
+ #include "unmapped-view-node.hpp"
+ #include "wayfire/plugin.hpp"
+@@ -266,6 +269,7 @@ class wayfire_animation : public wf::plu
+ {
+     wf::option_wrapper_t<std::string> open_animation{"animate/open_animation"};
+     wf::option_wrapper_t<std::string> close_animation{"animate/close_animation"};
++    wf::option_wrapper_t<std::string> minimize_animation{"animate/minimize_animation"};
+ 
+     wf::option_wrapper_t<wf::animation_description_t> default_duration{"animate/duration"};
+     wf::option_wrapper_t<wf::animation_description_t> fade_duration{"animate/fade_duration"};
+@@ -416,6 +420,14 @@ class wayfire_animation : public wf::plu
+         {
+             set_animation<FireAnimation>(ev->view, ANIMATION_TYPE_MAP,
+                 animation.duration, animation.animation_name);
++        } else if (animation.animation_name == "zap")
++        {
++            set_animation<wf::zap::zap_animation>(ev->view, ANIMATION_TYPE_MAP,
++                animation.duration, animation.animation_name);
++        } else if (animation.animation_name == "spin")
++        {
++            set_animation<wf::spin::spin_animation>(ev->view, ANIMATION_TYPE_MAP,
++                animation.duration, animation.animation_name);
+         }
+     };
+ 
+@@ -436,6 +448,14 @@ class wayfire_animation : public wf::plu
+         {
+             set_animation<FireAnimation>(ev->view, ANIMATION_TYPE_UNMAP,
+                 animation.duration, animation.animation_name);
++        } else if (animation.animation_name == "zap")
++        {
++            set_animation<wf::zap::zap_animation>(ev->view, ANIMATION_TYPE_UNMAP,
++                animation.duration, animation.animation_name);
++        } else if (animation.animation_name == "spin")
++        {
++            set_animation<wf::spin::spin_animation>(ev->view, ANIMATION_TYPE_UNMAP,
++                animation.duration, animation.animation_name);
+         }
+     };
+ 
+@@ -444,10 +464,28 @@ class wayfire_animation : public wf::plu
+     {
+         if (ev->state)
+         {
+-            set_animation<zoom_animation>(ev->view, ANIMATION_TYPE_MINIMIZE, default_duration, "minimize");
++            if (std::string(minimize_animation) == "squeezimize")
++            {
++                set_animation<wf::squeezimize::squeezimize_animation>(ev->view, ANIMATION_TYPE_MINIMIZE,
++                    default_duration,
++                    "minimize");
++            } else if (std::string(minimize_animation) == "zoom")
++            {
++                set_animation<zoom_animation>(ev->view, ANIMATION_TYPE_MINIMIZE, default_duration,
++                    "minimize");
++            }
+         } else
+         {
+-            set_animation<zoom_animation>(ev->view, ANIMATION_TYPE_RESTORE, default_duration, "minimize");
++            if (std::string(minimize_animation) == "squeezimize")
++            {
++                set_animation<wf::squeezimize::squeezimize_animation>(ev->view, ANIMATION_TYPE_RESTORE,
++                    default_duration,
++                    "minimize");
++            } else if (std::string(minimize_animation) == "zoom")
++            {
++                set_animation<zoom_animation>(ev->view, ANIMATION_TYPE_RESTORE, default_duration,
++                    "minimize");
++            }
+         }
+ 
+         // ev->carried_out should remain false, so that core also does the automatic minimize/restore and
+--- /dev/null
++++ wayfire-0.9.0/plugins/animate/spin.hpp
+@@ -0,0 +1,104 @@
++/*
++ * The MIT License (MIT)
++ *
++ * Copyright (c) 2024 Scott Moreau <oreaus@gmail.com>
++ *
++ * Permission is hereby granted, free of charge, to any person obtaining a copy
++ * of this software and associated documentation files (the "Software"), to deal
++ * in the Software without restriction, including without limitation the rights
++ * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
++ * copies of the Software, and to permit persons to whom the Software is
++ * furnished to do so, subject to the following conditions:
++ *
++ * The above copyright notice and this permission notice shall be included in
++ * all copies or substantial portions of the Software.
++ *
++ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
++ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
++ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
++ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
++ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
++ * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
++ * SOFTWARE.
++ */
++
++#include "animate.hpp"
++#include "wayfire/toplevel-view.hpp"
++#include <memory>
++#include <wayfire/plugin.hpp>
++#include <wayfire/opengl.hpp>
++#include <wayfire/view-transform.hpp>
++#include <wayfire/output.hpp>
++
++
++wf::option_wrapper_t<wf::animation_description_t> spin_duration{"animate/spin_duration"};
++wf::option_wrapper_t<int> spin_rotations{"animate/spin_rotations"};
++
++namespace wf
++{
++namespace spin
++{
++static const std::string spin_transformer_name = "spin-transformer";
++using namespace wf::animation;
++class spin_animation_t : public duration_t
++{
++  public:
++    using duration_t::duration_t;
++};
++class spin_animation : public animation_base
++{
++    wayfire_view view;
++    wf_animation_type type;
++    wf::spin::spin_animation_t progression;
++
++  public:
++
++    void init(wayfire_view view, wf::animation_description_t dur, wf_animation_type type) override
++    {
++        this->view = view;
++        this->type = type;
++        this->progression =
++            wf::spin::spin_animation_t(wf::create_option<wf::animation_description_t>(spin_duration));
++
++        if (type & HIDING_ANIMATION)
++        {
++            this->progression.reverse();
++        }
++
++        this->progression.start();
++
++        auto tr = std::make_shared<wf::scene::view_2d_transformer_t>(view);
++        view->get_transformed_node()->add_transformer(
++            tr, wf::TRANSFORMER_HIGHLEVEL, spin_transformer_name);
++    }
++
++    bool step() override
++    {
++        auto transform = view->get_transformed_node()
++            ->get_transformer<wf::scene::view_2d_transformer_t>(spin_transformer_name);
++        auto progress = this->progression.progress();
++        transform->alpha   = progress;
++        transform->angle   = progress * M_PI * 2.0 * int(spin_rotations);
++        transform->scale_x = 0.01 + progress * 0.99;
++        transform->scale_y = 0.01 + progress * 0.99;
++
++        return progression.running();
++    }
++
++    void reverse() override
++    {
++        this->progression.reverse();
++    }
++
++    int get_direction() override
++    {
++        return this->progression.get_direction();
++    }
++
++    ~spin_animation()
++    {
++        view->get_transformed_node()->rem_transformer(spin_transformer_name);
++    }
++};
++}
++}
+--- /dev/null
++++ wayfire-0.9.0/plugins/animate/squeezimize.hpp
+@@ -0,0 +1,371 @@
++/*
++ * The MIT License (MIT)
++ *
++ * Copyright (c) 2024 Scott Moreau <oreaus@gmail.com>
++ *
++ * Permission is hereby granted, free of charge, to any person obtaining a copy
++ * of this software and associated documentation files (the "Software"), to deal
++ * in the Software without restriction, including without limitation the rights
++ * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
++ * copies of the Software, and to permit persons to whom the Software is
++ * furnished to do so, subject to the following conditions:
++ *
++ * The above copyright notice and this permission notice shall be included in
++ * all copies or substantial portions of the Software.
++ *
++ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
++ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
++ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
++ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
++ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
++ * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
++ * SOFTWARE.
++ */
++
++#include <wayfire/output.hpp>
++#include <wayfire/opengl.hpp>
++#include <wayfire/core.hpp>
++#include <wayfire/view-transform.hpp>
++#include <wayfire/signal-definitions.hpp>
++#include <wayfire/toplevel-view.hpp>
++#include <wayfire/window-manager.hpp>
++#include <wayfire/view-transform.hpp>
++#include <wayfire/txn/transaction-manager.hpp>
++#include <wayfire/render-manager.hpp>
++#include <wayfire/scene-render.hpp>
++#include <wayfire/util/duration.hpp>
++#include <glm/gtc/matrix_transform.hpp>
++
++#include "animate.hpp"
++
++
++wf::option_wrapper_t<wf::animation_description_t> squeezimize_duration{"animate/squeezimize_duration"};
++
++static const char *squeeze_vert_source =
++    R"(
++#version 100
++
++attribute mediump vec2 position;
++attribute mediump vec2 uv_in;
++
++uniform mat4 matrix;
++
++varying highp vec2 uv;
++
++void main() {
++    uv = uv_in;
++    gl_Position = matrix * vec4(position, 0.0, 1.0);
++}
++)";
++
++static const char *squeeze_frag_source =
++    R"(
++#version 100
++@builtin_ext@
++@builtin@
++
++precision mediump float;
++
++varying highp vec2 uv;
++uniform mediump float progress;
++uniform mediump vec4 src_box;
++uniform mediump vec4 target_box;
++uniform int upward;
++
++void main()
++{
++    float y;
++    vec2 uv_squeeze;
++    float inv_w = 1.0 / (src_box.z - src_box.x);
++    float inv_h = 1.0 / (src_box.w - src_box.y);
++    float progress_pt_one = clamp(progress, 0.0, 0.5) * 2.0;
++    float progress_pt_two = (clamp(progress, 0.5, 1.0) - 0.5) * 2.0;
++
++    uv_squeeze.x = (uv.x * inv_w) - (inv_w - 1.0);
++    uv_squeeze.x += inv_w - inv_w * src_box.z;
++    uv_squeeze.y = (uv.y * inv_h) - (inv_h - 1.0);
++    uv_squeeze.y += inv_h * src_box.y;
++
++    if (upward == 1)
++    {
++        y = uv.y;
++        uv_squeeze.y += -progress_pt_two * (inv_h - target_box.w);
++    } else
++    {
++        y = 1.0 - uv.y;
++        uv_squeeze.y -= -progress_pt_two * (src_box.y + target_box.y + target_box.w);
++    }
++
++    float sigmoid = 1.0 / (1.0 + pow(2.718, -((y * inv_h) * 6.0 - 3.0)));
++    sigmoid *= progress_pt_one * (src_box.x - target_box.x);
++
++    uv_squeeze.x += sigmoid * inv_w;
++    uv_squeeze.x *= (y * (1.0 / (target_box.z - target_box.x)) * progress_pt_one) + 1.0;
++
++    if (uv_squeeze.x < 0.0 || uv_squeeze.y < 0.0 ||
++        uv_squeeze.x > 1.0 || uv_squeeze.y > 1.0)
++    {
++        discard;
++    }
++
++    gl_FragColor = get_pixel(uv_squeeze);
++}
++)";
++
++namespace wf
++{
++namespace squeezimize
++{
++static std::string squeezimize_transformer_name = "animation-squeezimize";
++using namespace wf::scene;
++using namespace wf::animation;
++class squeezimize_animation_t : public duration_t
++{
++  public:
++    using duration_t::duration_t;
++    timed_transition_t squeeze{*this};
++};
++class squeezimize_transformer : public wf::scene::view_2d_transformer_t
++{
++  public:
++    wf::output_t *output;
++    OpenGL::program_t program;
++    wf::geometry_t minimize_target;
++    wf::geometry_t animation_geometry;
++    squeezimize_animation_t progression{squeezimize_duration};
++
++    class simple_node_render_instance_t : public wf::scene::transformer_render_instance_t<squeezimize_transformer>
++    {
++        wf::signal::connection_t<node_damage_signal> on_node_damaged =
++            [=] (node_damage_signal *ev)
++        {
++            push_to_parent(ev->region);
++        };
++
++        damage_callback push_to_parent;
++
++      public:
++        simple_node_render_instance_t(squeezimize_transformer *self, damage_callback push_damage,
++            wf::output_t *output) : wf::scene::transformer_render_instance_t<squeezimize_transformer>(self,
++                push_damage,
++                output)
++        {
++            this->push_to_parent = push_damage;
++            self->connect(&on_node_damaged);
++        }
++
++        ~simple_node_render_instance_t()
++        {}
++
++        void schedule_instructions(
++            std::vector<render_instruction_t>& instructions,
++            const wf::render_target_t& target, wf::region_t& damage) override
++        {
++            instructions.push_back(render_instruction_t{
++                        .instance = this,
++                        .target   = target,
++                        .damage   = damage & self->get_bounding_box(),
++                    });
++        }
++
++        void transform_damage_region(wf::region_t& damage) override
++        {
++            damage |= wf::region_t{self->animation_geometry};
++        }
++
++        void render(const wf::render_target_t& target,
++            const wf::region_t& damage) override
++        {
++            auto src_box = self->get_children_bounding_box();
++            auto src_tex = wf::scene::transformer_render_instance_t<squeezimize_transformer>::get_texture(
++                1.0);
++            auto progress = self->progression.progress();
++            int upward    = ((src_box.y > self->minimize_target.y) ||
++                ((src_box.y < 0) &&
++                    (self->minimize_target.y < self->output->get_relative_geometry().height / 2)));
++            static const float vertex_data_uv[] = {
++                0.0f, 0.0f,
++                1.0f, 0.0f,
++                1.0f, 1.0f,
++                0.0f, 1.0f,
++            };
++
++            self->animation_geometry.x     = std::min(src_box.x, self->minimize_target.x);
++            self->animation_geometry.y     = std::min(src_box.y, self->minimize_target.y);
++            self->animation_geometry.width =
++                std::max(std::max(std::max(src_box.width,
++                    self->minimize_target.width),
++                    (self->minimize_target.x + self->minimize_target.width) - src_box.x),
++                    (src_box.x + src_box.width) - self->minimize_target.x);
++            self->animation_geometry.height =
++                std::max(std::max(std::max(src_box.height,
++                    self->minimize_target.height),
++                    (self->minimize_target.y + self->minimize_target.height) - src_box.y),
++                    (src_box.y + src_box.height) - self->minimize_target.y);
++
++            const float vertex_data_pos[] = {
++                1.0f * self->animation_geometry.x,
++                1.0f * self->animation_geometry.y + self->animation_geometry.height,
++                1.0f * self->animation_geometry.x + self->animation_geometry.width,
++                1.0f * self->animation_geometry.y + self->animation_geometry.height,
++                1.0f * self->animation_geometry.x + self->animation_geometry.width,
++                1.0f * self->animation_geometry.y,
++                1.0f * self->animation_geometry.x, 1.0f * self->animation_geometry.y,
++            };
++
++            const glm::vec4 src_box_pos{
++                float(src_box.x - self->animation_geometry.x) / self->animation_geometry.width,
++                float(src_box.y - self->animation_geometry.y) / self->animation_geometry.height,
++                float((src_box.x - self->animation_geometry.x) + src_box.width) /
++                self->animation_geometry.width,
++                float((src_box.y - self->animation_geometry.y) + src_box.height) /
++                self->animation_geometry.height
++            };
++
++            const glm::vec4 target_box_pos{
++                float(self->minimize_target.x - self->animation_geometry.x) / self->animation_geometry.width,
++                float(self->minimize_target.y - self->animation_geometry.y) / self->animation_geometry.height,
++                float((self->minimize_target.x - self->animation_geometry.x) + self->minimize_target.width) /
++                self->animation_geometry.width,
++                float((self->minimize_target.y - self->animation_geometry.y) + self->minimize_target.height) /
++                self->animation_geometry.height
++            };
++
++            OpenGL::render_begin(target);
++            self->program.use(wf::TEXTURE_TYPE_RGBA);
++            self->program.uniformMatrix4f("matrix", target.get_orthographic_projection());
++            self->program.attrib_pointer("position", 2, 0, vertex_data_pos);
++            self->program.attrib_pointer("uv_in", 2, 0, vertex_data_uv);
++            self->program.uniform1i("upward", upward);
++            self->program.uniform1f("progress", progress);
++            self->program.uniform4f("src_box", src_box_pos);
++            self->program.uniform4f("target_box", target_box_pos);
++            self->program.set_active_texture(src_tex);
++            for (const auto& box : damage)
++            {
++                target.logic_scissor(wlr_box_from_pixman_box(box));
++                GL_CALL(glDrawArrays(GL_TRIANGLE_FAN, 0, 4));
++            }
++
++            OpenGL::render_end();
++        }
++    };
++
++    squeezimize_transformer(wayfire_view view,
++        wf::geometry_t minimize_target, wf::geometry_t bbox) : wf::scene::view_2d_transformer_t(view)
++    {
++        this->minimize_target = minimize_target;
++        /* If there is no minimize target set, minimize to the bottom center of the output */
++        if ((this->minimize_target.width <= 0) || (this->minimize_target.height <= 0))
++        {
++            if (auto output = view->get_output())
++            {
++                auto og = output->get_relative_geometry();
++                this->minimize_target.x     = og.width / 2 - 50;
++                this->minimize_target.y     = og.height;
++                this->minimize_target.width = 100;
++                this->minimize_target.height = 50;
++            }
++        }
++
++        animation_geometry.x     = std::min(bbox.x, this->minimize_target.x);
++        animation_geometry.y     = std::min(bbox.y, this->minimize_target.y);
++        animation_geometry.width =
++            std::max(std::max(std::max(bbox.width,
++                this->minimize_target.width),
++                (this->minimize_target.x + this->minimize_target.width) - bbox.x),
++                (bbox.x + bbox.width) - this->minimize_target.x);
++        animation_geometry.height =
++            std::max(std::max(std::max(bbox.height,
++                this->minimize_target.height),
++                (this->minimize_target.y + this->minimize_target.height) - bbox.y),
++                (bbox.y + bbox.height) - this->minimize_target.y);
++        OpenGL::render_begin();
++        program.compile(squeeze_vert_source, squeeze_frag_source);
++        OpenGL::render_end();
++    }
++
++    wf::geometry_t get_bounding_box() override
++    {
++        return this->animation_geometry;
++    }
++
++    void gen_render_instances(std::vector<render_instance_uptr>& instances,
++        damage_callback push_damage, wf::output_t *shown_on) override
++    {
++        instances.push_back(std::make_unique<simple_node_render_instance_t>(
++            this, push_damage, shown_on));
++    }
++
++    void init_animation(bool squeeze)
++    {
++        if (!squeeze)
++        {
++            this->progression.reverse();
++        }
++
++        this->progression.start();
++    }
++
++    virtual ~squeezimize_transformer()
++    {
++        program.free_resources();
++    }
++};
++
++class squeezimize_animation : public animation_base
++{
++    wayfire_view view;
++
++  public:
++    void init(wayfire_view view, wf::animation_description_t dur, wf_animation_type type) override
++    {
++        this->view = view;
++        pop_transformer(view);
++        auto bbox     = view->get_transformed_node()->get_children_bounding_box();
++        auto toplevel = wf::toplevel_cast(view);
++        wf::dassert(toplevel != nullptr, "We cannot minimize non-toplevel views!");
++        auto hint = toplevel->get_minimize_hint();
++        auto tmgr = view->get_transformed_node();
++        auto node = std::make_shared<wf::squeezimize::squeezimize_transformer>(view, hint, bbox);
++        tmgr->add_transformer(node, wf::TRANSFORMER_HIGHLEVEL + 1, squeezimize_transformer_name);
++        node->init_animation(type & HIDING_ANIMATION);
++    }
++
++    void pop_transformer(wayfire_view view)
++    {
++        view->get_transformed_node()->rem_transformer(squeezimize_transformer_name);
++    }
++
++    bool step() override
++    {
++        auto tmgr = view->get_transformed_node();
++
++        if (auto tr =
++                tmgr->get_transformer<squeezimize_transformer>(squeezimize_transformer_name))
++        {
++            auto running = tr->progression.running();
++            if (!running)
++            {
++                pop_transformer(view);
++                return false;
++            }
++
++            return running;
++        }
++
++        return false;
++    }
++
++    void reverse() override
++    {
++        if (auto tr =
++                view->get_transformed_node()->get_transformer<squeezimize_transformer>(
++                    squeezimize_transformer_name))
++        {
++            tr->progression.reverse();
++        }
++    }
++};
++}
++}
+--- /dev/null
++++ wayfire-0.9.0/plugins/animate/zap.hpp
+@@ -0,0 +1,105 @@
++/*
++ * The MIT License (MIT)
++ *
++ * Copyright (c) 2024 Scott Moreau <oreaus@gmail.com>
++ *
++ * Permission is hereby granted, free of charge, to any person obtaining a copy
++ * of this software and associated documentation files (the "Software"), to deal
++ * in the Software without restriction, including without limitation the rights
++ * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
++ * copies of the Software, and to permit persons to whom the Software is
++ * furnished to do so, subject to the following conditions:
++ *
++ * The above copyright notice and this permission notice shall be included in
++ * all copies or substantial portions of the Software.
++ *
++ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
++ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
++ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
++ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
++ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
++ * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
++ * SOFTWARE.
++ */
++
++#include "animate.hpp"
++#include "wayfire/toplevel-view.hpp"
++#include <memory>
++#include <wayfire/plugin.hpp>
++#include <wayfire/opengl.hpp>
++#include <wayfire/view-transform.hpp>
++#include <wayfire/output.hpp>
++
++
++wf::option_wrapper_t<wf::animation_description_t> zap_duration{"animate/zap_duration"};
++
++namespace wf
++{
++namespace zap
++{
++static const std::string zap_transformer_name = "zap-transformer";
++using namespace wf::animation;
++class zap_animation_t : public duration_t
++{
++  public:
++    using duration_t::duration_t;
++};
++class zap_animation : public animation_base
++{
++    wayfire_view view;
++    wf_animation_type type;
++    wf::zap::zap_animation_t progression;
++
++  public:
++
++    void init(wayfire_view view, wf::animation_description_t dur, wf_animation_type type) override
++    {
++        this->view = view;
++        this->type = type;
++        this->progression =
++            wf::zap::zap_animation_t(wf::create_option<wf::animation_description_t>(zap_duration));
++
++        if (type & HIDING_ANIMATION)
++        {
++            this->progression.reverse();
++        }
++
++        this->progression.start();
++
++        auto tr = std::make_shared<wf::scene::view_2d_transformer_t>(view);
++        view->get_transformed_node()->add_transformer(
++            tr, wf::TRANSFORMER_HIGHLEVEL, zap_transformer_name);
++    }
++
++    bool step() override
++    {
++        auto transform = view->get_transformed_node()
++            ->get_transformer<wf::scene::view_2d_transformer_t>(zap_transformer_name);
++        auto progress = this->progression.progress();
++        auto progress_pt_one   = std::clamp(progress, 0.0, 1.0 / 3.0) * 3.0;
++        auto progress_pt_two   = (std::clamp(progress, 1.0 / 3.0, (1.0 / 3.0) * 2.0) - 1.0 / 3.0) * 3.0;
++        auto progress_pt_three = (std::clamp(progress, (1.0 / 3.0) * 2.0, 1.0) - (1.0 / 3.0) * 2.0) * 3.0;
++        transform->alpha   = progress_pt_one;
++        transform->scale_x = 0.01 + progress_pt_two * 0.99;
++        transform->scale_y = 0.01 + progress_pt_three * 0.99;
++
++        return progression.running();
++    }
++
++    void reverse() override
++    {
++        this->progression.reverse();
++    }
++
++    int get_direction() override
++    {
++        return this->progression.get_direction();
++    }
++
++    ~zap_animation()
++    {
++        view->get_transformed_node()->rem_transformer(zap_transformer_name);
++    }
++};
++}
++}
+--- wayfire-0.9.0.orig/plugins/common/wayfire/plugins/common/util.hpp
++++ wayfire-0.9.0/plugins/common/wayfire/plugins/common/util.hpp
+@@ -7,6 +7,7 @@
+ #include "wayfire/scene.hpp"
+ #include "wayfire/view.hpp"
+ #include "wayfire/output.hpp"
++#include "wayfire/view-helpers.hpp"
+ #include "wayfire/toplevel-view.hpp"
+ #include "wayfire/workspace-set.hpp"
+ #include <memory>
+@@ -90,7 +91,7 @@ inline wayfire_toplevel_view find_output
+ 
+             if (auto view = wf::toplevel_cast(wf::node_to_view(node)))
+             {
+-                if (view->get_wset() == output->wset())
++                if (wf::find_topmost_parent(view)->get_wset() == output->wset())
+                 {
+                     return view;
+                 }
+--- wayfire-0.9.0.orig/plugins/cube/cube.cpp
++++ wayfire-0.9.0/plugins/cube/cube.cpp
+@@ -272,7 +272,7 @@ class wayfire_cube : public wf::per_outp
+ 
+     void handle_pointer_button(const wlr_pointer_button_event& event) override
+     {
+-        if (event.state == WLR_BUTTON_RELEASED)
++        if (event.state == WL_POINTER_BUTTON_STATE_RELEASED)
+         {
+             input_ungrabbed();
+         }
+@@ -280,7 +280,7 @@ class wayfire_cube : public wf::per_outp
+ 
+     void handle_pointer_axis(const wlr_pointer_axis_event& event) override
+     {
+-        if (event.orientation == WLR_AXIS_ORIENTATION_VERTICAL)
++        if (event.orientation == WL_POINTER_AXIS_VERTICAL_SCROLL)
+         {
+             pointer_scrolled(event.delta);
+         }
+--- wayfire-0.9.0.orig/plugins/decor/deco-subsurface.cpp
++++ wayfire-0.9.0/plugins/decor/deco-subsurface.cpp
+@@ -246,7 +246,7 @@ class simple_decoration_node_t : public
+             return;
+         }
+ 
+-        handle_action(layout.handle_press_event(ev.state == WLR_BUTTON_PRESSED));
++        handle_action(layout.handle_press_event(ev.state == WL_POINTER_BUTTON_STATE_PRESSED));
+     }
+ 
+     void handle_action(wf::decor::decoration_layout_t::action_response_t action)
+--- wayfire-0.9.0.orig/plugins/ipc-rules/ipc-input-methods.hpp
++++ wayfire-0.9.0/plugins/ipc-rules/ipc-input-methods.hpp
+@@ -35,7 +35,7 @@ class ipc_rules_input_methods_t
+           case WLR_INPUT_DEVICE_TOUCH:
+             return "touch";
+ 
+-          case WLR_INPUT_DEVICE_TABLET_TOOL:
++          case WLR_INPUT_DEVICE_TABLET:
+             return "tablet_tool";
+ 
+           case WLR_INPUT_DEVICE_TABLET_PAD:
+@@ -55,11 +55,9 @@ class ipc_rules_input_methods_t
+         for (auto& device : wf::get_core().get_input_devices())
+         {
+             nlohmann::json d;
+-            d["id"]     = (intptr_t)device->get_wlr_handle();
+-            d["name"]   = nonull(device->get_wlr_handle()->name);
+-            d["vendor"] = device->get_wlr_handle()->vendor;
+-            d["product"] = device->get_wlr_handle()->product;
+-            d["type"]    = wlr_input_device_type_to_string(device->get_wlr_handle()->type);
++            d["id"]   = (intptr_t)device->get_wlr_handle();
++            d["name"] = nonull(device->get_wlr_handle()->name);
++            d["type"] = wlr_input_device_type_to_string(device->get_wlr_handle()->type);
+             d["enabled"] = device->is_enabled();
+             response.push_back(d);
+         }
+--- wayfire-0.9.0.orig/plugins/ipc-rules/ipc-utility-methods.hpp
++++ wayfire-0.9.0/plugins/ipc-rules/ipc-utility-methods.hpp
+@@ -63,7 +63,7 @@ class ipc_rules_utility_methods_t
+         if (!headless_backend)
+         {
+             auto& core = wf::get_core();
+-            headless_backend = wlr_headless_backend_create(core.display);
++            headless_backend = wlr_headless_backend_create(core.ev_loop);
+             wlr_multi_backend_add(core.backend, headless_backend);
+             wlr_backend_start(headless_backend);
+         }
+--- wayfire-0.9.0.orig/plugins/ipc-rules/meson.build
++++ wayfire-0.9.0/plugins/ipc-rules/meson.build
+@@ -6,3 +6,5 @@ shared_module('ipc-rules', ['ipc-rules.c
+         dependencies: all_deps,
+         install: true,
+         install_dir: conf_data.get('PLUGIN_PATH'))
++
++install_headers(['ipc-rules-common.hpp'], subdir: 'wayfire/plugins/ipc')
+--- wayfire-0.9.0.orig/plugins/ipc/ipc.cpp
++++ wayfire-0.9.0/plugins/ipc/ipc.cpp
+@@ -306,9 +306,11 @@ void wf::ipc::client_t::send_json(nlohma
+     }
+ 
+     uint32_t len = serialized.length();
+-    if (write_exact(fd, (char*)&len, 4))
++    if (!write_exact(fd, (char*)&len, 4) || !write_exact(fd, serialized.data(), len))
+     {
+-        write_exact(fd, serialized.data(), len);
++        LOGE("Error sending json to client!");
++        shutdown(fd, SHUT_RDWR);
++        return;
+     }
+ }
+ 
+--- wayfire-0.9.0.orig/plugins/ipc/stipc.cpp
++++ wayfire-0.9.0/plugins/ipc/stipc.cpp
+@@ -94,7 +94,7 @@ class headless_input_backend_t
+     headless_input_backend_t()
+     {
+         auto& core = wf::get_core();
+-        backend = wlr_headless_backend_create(core.display);
++        backend = wlr_headless_backend_create(core.ev_loop);
+         wlr_multi_backend_add(core.backend, backend);
+ 
+         wlr_pointer_init(&pointer, &pointer_impl, "stipc_pointer");
+@@ -140,7 +140,7 @@ class headless_input_backend_t
+         wlr_keyboard_notify_key(&keyboard, &ev);
+     }
+ 
+-    void do_button(uint32_t button, wlr_button_state state)
++    void do_button(uint32_t button, wl_pointer_button_state state)
+     {
+         wlr_pointer_button_event ev;
+         ev.pointer   = &pointer;
+@@ -479,12 +479,12 @@ class stipc_plugin_t : public wf::plugin
+                 input->do_key(KEY_LEFTMETA, WL_KEYBOARD_KEY_STATE_PRESSED);
+             }
+ 
+-            input->do_button(button->code, WLR_BUTTON_PRESSED);
++            input->do_button(button->code, WL_POINTER_BUTTON_STATE_PRESSED);
+         }
+ 
+         if ((mode == "release") || (mode == "full"))
+         {
+-            input->do_button(button->code, WLR_BUTTON_RELEASED);
++            input->do_button(button->code, WL_POINTER_BUTTON_STATE_RELEASED);
+             if (button->modifier)
+             {
+                 input->do_key(KEY_LEFTMETA, WL_KEYBOARD_KEY_STATE_RELEASED);
+--- wayfire-0.9.0.orig/plugins/single_plugins/alpha.cpp
++++ wayfire-0.9.0/plugins/single_plugins/alpha.cpp
+@@ -151,7 +151,7 @@ class wayfire_alpha : public wf::plugin_
+             return false;
+         }
+ 
+-        if (ev->orientation == WLR_AXIS_ORIENTATION_VERTICAL)
++        if (ev->orientation == WL_POINTER_AXIS_VERTICAL_SCROLL)
+         {
+             update_alpha(view, ev->delta);
+ 
+--- wayfire-0.9.0.orig/plugins/single_plugins/command.cpp
++++ wayfire-0.9.0/plugins/single_plugins/command.cpp
+@@ -185,7 +185,8 @@ class wayfire_command : public wf::plugi
+     wf::signal::connection_t<wf::input_event_signal<wlr_pointer_button_event>> on_button_event =
+         [=] (wf::input_event_signal<wlr_pointer_button_event> *ev)
+     {
+-        if ((ev->event->button == repeat.pressed_button) && (ev->event->state == WLR_BUTTON_RELEASED))
++        if ((ev->event->button == repeat.pressed_button) &&
++            (ev->event->state == WL_POINTER_BUTTON_STATE_RELEASED))
+         {
+             reset_repeat();
+         }
+@@ -194,7 +195,8 @@ class wayfire_command : public wf::plugi
+     wf::signal::connection_t<wf::input_event_signal<wlr_keyboard_key_event>> on_key_event =
+         [=] (wf::input_event_signal<wlr_keyboard_key_event> *ev)
+     {
+-        if ((ev->event->keycode == repeat.pressed_key) && (ev->event->state == WLR_KEY_RELEASED))
++        if ((ev->event->keycode == repeat.pressed_key) &&
++            (ev->event->state == WL_KEYBOARD_KEY_STATE_RELEASED))
+         {
+             reset_repeat();
+         }
+@@ -203,7 +205,8 @@ class wayfire_command : public wf::plugi
+     wf::signal::connection_t<wf::input_event_signal<wlr_keyboard_key_event>> on_key_event_release =
+         [=] (wf::input_event_signal<wlr_keyboard_key_event> *ev)
+     {
+-        if ((ev->event->keycode == repeat.pressed_key) && (ev->event->state == WLR_KEY_RELEASED))
++        if ((ev->event->keycode == repeat.pressed_key) &&
++            (ev->event->state == WL_KEYBOARD_KEY_STATE_RELEASED))
+         {
+             repeat.callback();
+             repeat.pressed_key = repeat.pressed_button = 0;
+@@ -214,7 +217,8 @@ class wayfire_command : public wf::plugi
+     wf::signal::connection_t<wf::input_event_signal<wlr_pointer_button_event>> on_button_event_release =
+         [=] (wf::input_event_signal<wlr_pointer_button_event> *ev)
+     {
+-        if ((ev->event->button == repeat.pressed_button) && (ev->event->state == WLR_BUTTON_RELEASED))
++        if ((ev->event->button == repeat.pressed_button) &&
++            (ev->event->state == WL_POINTER_BUTTON_STATE_RELEASED))
+         {
+             repeat.callback();
+             repeat.pressed_key = repeat.pressed_button = 0;
+--- wayfire-0.9.0.orig/plugins/single_plugins/extra-gestures.cpp
++++ wayfire-0.9.0/plugins/single_plugins/extra-gestures.cpp
+@@ -15,8 +15,8 @@ namespace wf
+ using namespace touch;
+ class extra_gestures_plugin_t : public per_output_plugin_instance_t
+ {
+-    std::unique_ptr<gesture_t> touch_and_hold_move;
+-    std::unique_ptr<gesture_t> tap_to_close;
++    gesture_t touch_and_hold_move;
++    gesture_t tap_to_close;
+ 
+     wf::option_wrapper_t<int> move_fingers{"extra-gestures/move_fingers"};
+     wf::option_wrapper_t<int> move_delay{"extra-gestures/move_delay"};
+@@ -33,11 +33,9 @@ class extra_gestures_plugin_t : public p
+         build_touch_and_hold_move();
+         move_fingers.set_callback([=] () { build_touch_and_hold_move(); });
+         move_delay.set_callback([=] () { build_touch_and_hold_move(); });
+-        wf::get_core().add_touch_gesture({touch_and_hold_move});
+ 
+         build_tap_to_close();
+         close_fingers.set_callback([=] () { build_tap_to_close(); });
+-        wf::get_core().add_touch_gesture({tap_to_close});
+     }
+ 
+     /**
+@@ -71,23 +69,15 @@ class extra_gestures_plugin_t : public p
+ 
+     void build_touch_and_hold_move()
+     {
+-        if (touch_and_hold_move)
+-        {
+-            wf::get_core().rem_touch_gesture({touch_and_hold_move});
+-        }
++        wf::get_core().rem_touch_gesture(&touch_and_hold_move);
+ 
+-        auto touch_down = std::make_unique<wf::touch_action_t>(move_fingers, true);
+-        touch_down->set_move_tolerance(50);
+-        touch_down->set_duration(100);
+-
+-        auto hold = std::make_unique<wf::hold_action_t>(move_delay);
+-        hold->set_move_tolerance(100);
+-
+-        std::vector<std::unique_ptr<gesture_action_t>> actions;
+-        actions.emplace_back(std::move(touch_down));
+-        actions.emplace_back(std::move(hold));
+-        touch_and_hold_move = std::make_unique<gesture_t>(std::move(actions),
+-            [=] ()
++        touch_and_hold_move = wf::touch::gesture_builder_t()
++            .action(touch_action_t(move_fingers, true)
++            .set_move_tolerance(50)
++            .set_duration(100))
++            .action(hold_action_t(move_delay)
++                .set_move_tolerance(100))
++            .on_completed([=] ()
+         {
+             execute_view_action([] (wayfire_view view)
+             {
+@@ -96,38 +86,31 @@ class extra_gestures_plugin_t : public p
+                     wf::get_core().default_wm->move_request(toplevel);
+                 }
+             });
+-        });
++        }).build();
++
++        wf::get_core().add_touch_gesture(&touch_and_hold_move);
+     }
+ 
+     void build_tap_to_close()
+     {
+-        if (tap_to_close)
+-        {
+-            wf::get_core().rem_touch_gesture({tap_to_close});
+-        }
++        wf::get_core().rem_touch_gesture(&tap_to_close);
+ 
+-        auto touch_down = std::make_unique<wf::touch_action_t>(close_fingers, true);
+-        touch_down->set_move_tolerance(50);
+-        touch_down->set_duration(150);
+-
+-        auto touch_up = std::make_unique<wf::touch_action_t>(close_fingers, false);
+-        touch_up->set_move_tolerance(50);
+-        touch_up->set_duration(150);
+-
+-        std::vector<std::unique_ptr<gesture_action_t>> actions;
+-        actions.emplace_back(std::move(touch_down));
+-        actions.emplace_back(std::move(touch_up));
+-        tap_to_close = std::make_unique<gesture_t>(std::move(actions),
+-            [=] ()
+-        {
+-            execute_view_action([] (wayfire_view view) { view->close(); });
+-        });
++        tap_to_close = wf::touch::gesture_builder_t()
++            .action(touch_action_t(close_fingers, true)
++            .set_move_tolerance(50)
++            .set_duration(150))
++            .action(touch_action_t(close_fingers, false)
++                .set_move_tolerance(50)
++                .set_duration(150))
++            .on_completed([=] () { execute_view_action([] (wayfire_view view) { view->close(); }); })
++            .build();
++        wf::get_core().add_touch_gesture(&tap_to_close);
+     }
+ 
+     void fini() override
+     {
+-        wf::get_core().rem_touch_gesture({touch_and_hold_move});
+-        wf::get_core().rem_touch_gesture({tap_to_close});
++        wf::get_core().rem_touch_gesture(&touch_and_hold_move);
++        wf::get_core().rem_touch_gesture(&tap_to_close);
+     }
+ };
+ }
+--- wayfire-0.9.0.orig/plugins/single_plugins/move.cpp
++++ wayfire-0.9.0/plugins/single_plugins/move.cpp
+@@ -138,7 +138,7 @@ class wayfire_move : public wf::per_outp
+     wf::signal::connection_t<wf::input_event_signal<wlr_pointer_button_event>> on_raw_pointer_button =
+         [=] (wf::input_event_signal<wlr_pointer_button_event> *ev)
+     {
+-        if (ev->event->state == WLR_BUTTON_PRESSED)
++        if (ev->event->state == WL_POINTER_BUTTON_STATE_PRESSED)
+         {
+             last_input_press_position = get_global_input_coords();
+         }
+@@ -198,7 +198,7 @@ class wayfire_move : public wf::per_outp
+ 
+     void handle_pointer_button(const wlr_pointer_button_event& event) override
+     {
+-        if (event.state != WLR_BUTTON_RELEASED)
++        if (event.state != WL_POINTER_BUTTON_STATE_RELEASED)
+         {
+             return;
+         }
+--- wayfire-0.9.0.orig/plugins/single_plugins/resize.cpp
++++ wayfire-0.9.0/plugins/single_plugins/resize.cpp
+@@ -112,7 +112,8 @@ class wayfire_resize : public wf::per_ou
+ 
+     void handle_pointer_button(const wlr_pointer_button_event& event) override
+     {
+-        if ((event.state == WLR_BUTTON_RELEASED) && was_client_request && (event.button == BTN_LEFT))
++        if ((event.state == WL_POINTER_BUTTON_STATE_RELEASED) && was_client_request &&
++            (event.button == BTN_LEFT))
+         {
+             return input_pressed(event.state);
+         }
+--- wayfire-0.9.0.orig/plugins/single_plugins/wrot.cpp
++++ wayfire-0.9.0/plugins/single_plugins/wrot.cpp
+@@ -214,7 +214,7 @@ class wf_wrot : public wf::per_output_pl
+ 
+     void handle_pointer_button(const wlr_pointer_button_event& event) override
+     {
+-        if (event.state == WLR_BUTTON_RELEASED)
++        if (event.state == WL_POINTER_BUTTON_STATE_RELEASED)
+         {
+             input_released();
+         }
+--- wayfire-0.9.0.orig/plugins/single_plugins/zoom.cpp
++++ wayfire-0.9.0/plugins/single_plugins/zoom.cpp
+@@ -57,7 +57,7 @@ class wayfire_zoom_screen : public wf::p
+             return false;
+         }
+ 
+-        if (ev->orientation != WLR_AXIS_ORIENTATION_VERTICAL)
++        if (ev->orientation != WL_POINTER_AXIS_VERTICAL_SCROLL)
+         {
+             return false;
+         }
+--- wayfire-0.9.0.orig/plugins/tile/tile-plugin.cpp
++++ wayfire-0.9.0/plugins/tile/tile-plugin.cpp
+@@ -332,7 +332,7 @@ class tile_output_plugin_t : public wf::
+ 
+     void handle_pointer_button(const wlr_pointer_button_event& event) override
+     {
+-        if (event.state == WLR_BUTTON_RELEASED)
++        if (event.state == WL_POINTER_BUTTON_STATE_RELEASED)
+         {
+             stop_controller(false);
+         }
+--- wayfire-0.9.0.orig/proto/meson.build
++++ wayfire-0.9.0/proto/meson.build
+@@ -27,7 +27,7 @@ server_protocols = [
+     [wl_protocol_dir, 'unstable/xdg-output/xdg-output-unstable-v1.xml'],
+     [wl_protocol_dir, 'unstable/pointer-constraints/pointer-constraints-unstable-v1.xml'],
+     [wl_protocol_dir, 'unstable/relative-pointer/relative-pointer-unstable-v1.xml'],
+-    [wl_protocol_dir, 'unstable/tablet/tablet-unstable-v2.xml'],
++    [wl_protocol_dir, 'stable/tablet/tablet-v2.xml'],
+     [wl_protocol_dir, 'unstable/keyboard-shortcuts-inhibit/keyboard-shortcuts-inhibit-unstable-v1.xml'],
+     [wl_protocol_dir, 'unstable/input-method/input-method-unstable-v1.xml'],
+     [wl_protocol_dir, 'staging/ext-session-lock/ext-session-lock-v1.xml'],
+--- wayfire-0.9.0.orig/src/api/wayfire/core.hpp
++++ wayfire-0.9.0/src/api/wayfire/core.hpp
+@@ -218,7 +218,7 @@ class compositor_core_t : public wf::obj
+     /**
+      * @return The surface which has touch focus, or null if none.
+      */
+-    virtual wf::scene::node_ptr get_touch_focus() = 0;
++    virtual wf::scene::node_ptr get_touch_focus(int finger_id = 0) = 0;
+ 
+     /** @return The view whose surface is cursor focus */
+     wayfire_view get_cursor_focus_view();
+--- wayfire-0.9.0.orig/src/api/wayfire/nonstd/wlroots-full.hpp
++++ wayfire-0.9.0/src/api/wayfire/nonstd/wlroots-full.hpp
+@@ -20,6 +20,8 @@
+ 
+ extern "C"
+ {
++// Version
++#include <wlr/version.h>
+ // Rendering
+ #define static
+ #include <wlr/types/wlr_compositor.h>
+@@ -36,6 +38,7 @@ extern "C"
+ #include <wlr/types/wlr_damage_ring.h>
+ #include <wlr/types/wlr_presentation_time.h>
+ #include <wlr/util/region.h>
++#include <wlr/util/transform.h>
+ #include <wlr/types/wlr_screencopy_v1.h>
+ #include <wlr/types/wlr_export_dmabuf_v1.h>
+ #include <wlr/types/wlr_keyboard_shortcuts_inhibit_v1.h>
+@@ -82,6 +85,7 @@ extern "C"
+ #define static
+ #include <wlr/backend.h>
+ #include <wlr/backend/drm.h>
++#include <wlr/types/wlr_drm.h>
+ #if WLR_HAS_X11_BACKEND
+     #include <wlr/backend/x11.h>
+ #endif
+@@ -109,7 +113,7 @@ extern "C"
+     #include <wlr/types/wlr_pointer_constraints_v1.h>
+ #endif
+ #include <wlr/types/wlr_cursor.h>
+-#if __has_include(<tablet-unstable-v2-protocol.h>)
++#if __has_include(<tablet-v2-protocol.h>)
+     #include <wlr/types/wlr_tablet_v2.h>
+ #endif
+ #include <wlr/types/wlr_tablet_tool.h>
+@@ -128,7 +132,6 @@ extern "C"
+ #include <wlr/types/wlr_virtual_pointer_v1.h>
+ #include <wlr/types/wlr_idle_notify_v1.h>
+ #include <wlr/types/wlr_idle_inhibit_v1.h>
+-#include <wlr/types/wlr_input_inhibitor.h>
+ #define delete delete_
+ #include <wlr/types/wlr_input_method_v2.h>
+ #undef delete
+--- wayfire-0.9.0.orig/src/api/wayfire/plugin.hpp
++++ wayfire-0.9.0/src/api/wayfire/plugin.hpp
+@@ -105,7 +105,7 @@ class plugin_interface_t
+ using wayfire_plugin_load_func = wf::plugin_interface_t * (*)();
+ 
+ /** The version of Wayfire's API/ABI */
+-constexpr uint32_t WAYFIRE_API_ABI_VERSION = 2024'06'19;
++constexpr uint32_t WAYFIRE_API_ABI_VERSION = 2024'08'26;
+ 
+ /**
+  * Each plugin must also provide a function which returns the Wayfire API/ABI
+--- wayfire-0.9.0.orig/src/core/core-impl.hpp
++++ wayfire-0.9.0/src/core/core-impl.hpp
+@@ -54,7 +54,7 @@ class compositor_core_impl_t : public co
+     const wf::touch::gesture_state_t& get_touch_state() override;
+ 
+     wf::scene::node_ptr get_cursor_focus() override;
+-    wf::scene::node_ptr get_touch_focus() override;
++    wf::scene::node_ptr get_touch_focus(int finger_id) override;
+ 
+     void add_touch_gesture(
+         nonstd::observer_ptr<wf::touch::gesture_t> gesture) override;
+--- wayfire-0.9.0.orig/src/core/core.cpp
++++ wayfire-0.9.0/src/core/core.cpp
+@@ -94,6 +94,13 @@ void wf::compositor_core_impl_t::init()
+     /* Needed for subsurfaces */
+     wlr_subcompositor_create(display);
+ 
++    /* Legacy DRM */
++    if (runtime_config.legacy_wl_drm &&
++        wlr_renderer_get_texture_formats(renderer, WLR_BUFFER_CAP_DMABUF))
++    {
++        wlr_drm_create(display, renderer);
++    }
++
+     protocols.data_device = wlr_data_device_manager_create(display);
+     protocols.primary_selection_v1 =
+         wlr_primary_selection_v1_device_manager_create(display);
+@@ -130,20 +137,6 @@ void wf::compositor_core_impl_t::init()
+         LOGE("Failed to create wlr_drm_lease_device_v1; VR will not be available!");
+     }
+ 
+-    /* input-inhibit setup */
+-    protocols.input_inhibit = wlr_input_inhibit_manager_create(display);
+-    input_inhibit_activated.set_callback([&] (void*)
+-    {
+-        input->set_exclusive_focus(protocols.input_inhibit->active_client);
+-    });
+-    input_inhibit_activated.connect(&protocols.input_inhibit->events.activate);
+-
+-    input_inhibit_deactivated.set_callback([&] (void*)
+-    {
+-        input->set_exclusive_focus(nullptr);
+-    });
+-    input_inhibit_deactivated.connect(&protocols.input_inhibit->events.deactivate);
+-
+     /* idle-inhibit setup */
+     protocols.idle_notifier = wlr_idle_notifier_v1_create(display);
+     protocols.idle_inhibit  = wlr_idle_inhibit_v1_create(display);
+@@ -388,9 +381,9 @@ wayfire_view wf::compositor_core_t::get_
+     return isec ? node_to_view(isec->node->shared_from_this()) : nullptr;
+ }
+ 
+-wf::scene::node_ptr wf::compositor_core_impl_t::get_touch_focus()
++wf::scene::node_ptr wf::compositor_core_impl_t::get_touch_focus(int finger_id)
+ {
+-    return seat->priv->touch->get_focus();
++    return seat->priv->touch->get_focus(finger_id);
+ }
+ 
+ wayfire_view wf::compositor_core_t::get_touch_focus_view()
+--- wayfire-0.9.0.orig/src/core/output-layout.cpp
++++ wayfire-0.9.0/src/core/output-layout.cpp
+@@ -21,6 +21,71 @@
+ 
+ static void*const WF_NOOP_OUTPUT_MAGIC = (void*)0x1234;
+ 
++// wlroots wrappers
++namespace wf
++{
++class wlr_output_state_setter_t
++{
++  public:
++    wlr_output_state_setter_t()
++    {
++        wlr_output_state_init(&pending);
++    }
++
++    ~wlr_output_state_setter_t()
++    {
++        wlr_output_state_finish(&pending);
++    }
++
++    wlr_output_state_setter_t(const wlr_output_state_setter_t&) = delete;
++    wlr_output_state_setter_t(wlr_output_state_setter_t&&) = delete;
++    wlr_output_state_setter_t& operator =(const wlr_output_state_setter_t&) = delete;
++    wlr_output_state_setter_t& operator =(wlr_output_state_setter_t&&) = delete;
++
++    void reset()
++    {
++        wlr_output_state_finish(&pending);
++        wlr_output_state_init(&pending);
++    }
++
++    // Commit all pending changes on the output.
++    // Returns true if the output was successfully committed.
++    //
++    // After this operation, the pending output state (@pending) is reset.
++    bool commit(wlr_output *output)
++    {
++        bool r = wlr_output_commit_state(output, &pending);
++        reset();
++        return r;
++    }
++
++    // Test whether the pending state can be applied on the output.
++    bool test(wlr_output *output)
++    {
++        return wlr_output_test_state(output, &pending);
++    }
++
++    // Test whether the pending state can be applied on the output.
++    // If so, commit the state.
++    //
++    // In both cases, reset @pending.
++    bool test_and_commit(wlr_output *output)
++    {
++        if (test(output))
++        {
++            commit(output);
++            return true;
++        } else
++        {
++            reset();
++            return false;
++        }
++    }
++
++    wlr_output_state pending;
++};
++}
++
+ static wl_output_transform get_transform_from_string(std::string transform)
+ {
+     if (transform == "normal")
+@@ -258,6 +323,7 @@ static const char *get_format_name(uint3
+ struct output_layout_output_t
+ {
+     wlr_output *handle;
++    wlr_output_state_setter_t pending_state;
+     output_state_t current_state{};
+     bool is_externally_managed = false;
+     bool is_nested_compositor  = false;
+@@ -618,8 +684,7 @@ struct output_layout_output_t
+                 (current_bit_depth == current_state.depth))
+             {
+                 /* Commit the enabling of the output */
+-                wlr_output_commit(handle);
+-
++                pending_state.commit(handle);
+                 return;
+             }
+         }
+@@ -628,7 +693,7 @@ struct output_layout_output_t
+         auto built_in = find_matching_mode(handle, mode, custom_mode);
+         if (built_in)
+         {
+-            wlr_output_set_mode(handle, built_in);
++            wlr_output_state_set_mode(&pending_state.pending, built_in);
+         } else
+         {
+             LOGI("Couldn't find matching mode ",
+@@ -636,24 +701,22 @@ struct output_layout_output_t
+                 " for output ", handle->name, ". Trying to use custom mode",
+                 "(might not work)");
+ 
+-            wlr_output_set_custom_mode(handle, mode.width, mode.height, mode.refresh);
++            wlr_output_state_set_custom_mode(&pending_state.pending, mode.width, mode.height, mode.refresh);
+         }
+ 
+-        wlr_output_commit(handle);
++        pending_state.commit(handle);
+ 
+         const bool adaptive_sync_enabled = (handle->adaptive_sync_status == WLR_OUTPUT_ADAPTIVE_SYNC_ENABLED);
+ 
+         if (adaptive_sync_enabled != current_state.vrr)
+         {
+-            wlr_output_enable_adaptive_sync(handle, current_state.vrr);
+-            if (wlr_output_test(handle))
++            wlr_output_state_set_adaptive_sync_enabled(&pending_state.pending, current_state.vrr);
++            if (pending_state.test_and_commit(handle))
+             {
+-                wlr_output_commit(handle);
+                 LOGD("Changed adaptive sync on output: ", handle->name, " to ", current_state.vrr);
+             } else
+             {
+                 LOGE("Failed to change adaptive sync on output: ", handle->name);
+-                wlr_output_rollback(handle);
+             }
+         }
+ 
+@@ -661,10 +724,9 @@ struct output_layout_output_t
+         {
+             for (auto fmt : formats_for_depth[current_state.depth])
+             {
+-                wlr_output_set_render_format(handle, fmt);
+-                if (wlr_output_test(handle))
++                wlr_output_state_set_render_format(&pending_state.pending, fmt);
++                if (pending_state.test_and_commit(handle))
+                 {
+-                    wlr_output_commit(handle);
+                     current_bit_depth = current_state.depth;
+                     LOGD("Set output format to ", get_format_name(fmt), " on output ", handle->name);
+                     break;
+@@ -683,15 +745,19 @@ struct output_layout_output_t
+     /** Render the output using texture as source */
+     void render_output(wlr_texture *texture)
+     {
+-        auto renderer = get_core().renderer;
+-        wlr_output_attach_render(handle, NULL);
+-        wlr_renderer_begin(renderer, handle->width, handle->height);
++        int buffer_age;
++        struct wlr_render_pass *pass = wlr_output_begin_render_pass(handle, &pending_state.pending,
++            &buffer_age, NULL);
++        if (pass == NULL)
++        {
++            return;
++        }
+ 
+         wf::texture_t tex{texture};
+         OpenGL::render_transformed_texture(tex, {-1, -1, 2, 2});
+ 
+-        wlr_renderer_end(renderer);
+-        wlr_output_commit(handle);
++        wlr_render_pass_submit(pass);
++        pending_state.commit(handle);
+     }
+ 
+     /* Load output contents and render them */
+@@ -728,10 +794,10 @@ struct output_layout_output_t
+ 
+     void set_enabled(bool enabled)
+     {
+-        wlr_output_enable(handle, enabled);
++        wlr_output_state_set_enabled(&pending_state.pending, enabled);
+         if (!enabled)
+         {
+-            wlr_output_commit(handle);
++            pending_state.commit(handle);
+         }
+     }
+ 
+@@ -903,15 +969,15 @@ struct output_layout_output_t
+         {
+             if (handle->transform != state.transform)
+             {
+-                wlr_output_set_transform(handle, state.transform);
++                wlr_output_state_set_transform(&pending_state.pending, state.transform);
+             }
+ 
+             if (handle->scale != state.scale)
+             {
+-                wlr_output_set_scale(handle, state.scale);
++                wlr_output_state_set_scale(&pending_state.pending, state.scale);
+             }
+ 
+-            wlr_output_commit(handle);
++            pending_state.commit(handle);
+ 
+             ensure_wayfire_output(get_effective_size());
+             output->render->damage_whole();
+@@ -995,10 +1061,10 @@ class output_layout_t::impl
+         on_backend_destroy.set_callback([=] (auto) { deinit_noop(); });
+         on_backend_destroy.connect(&wf::get_core().renderer->events.destroy);
+ 
+-        output_layout = wlr_output_layout_create();
++        output_layout = wlr_output_layout_create(get_core().display);
+         get_core().connect(&on_config_reload);
+ 
+-        noop_backend = wlr_headless_backend_create(get_core().display);
++        noop_backend = wlr_headless_backend_create(get_core().ev_loop);
+         wlr_backend_start(noop_backend);
+ 
+         get_core().connect(&on_backend_started);
+@@ -1086,8 +1152,8 @@ class output_layout_t::impl
+             state.scale     = head->state.scale;
+             state.transform = head->state.transform;
+             state.vrr = head->state.adaptive_sync_enabled;
+-            if ((handle->pending.render_format == DRM_FORMAT_XRGB2101010) ||
+-                (handle->pending.render_format == DRM_FORMAT_XBGR2101010))
++            if ((handle->render_format == DRM_FORMAT_XRGB2101010) ||
++                (handle->render_format == DRM_FORMAT_XBGR2101010))
+             {
+                 state.depth = 10;
+             } else
+--- wayfire-0.9.0.orig/src/core/seat/input-manager.cpp
++++ wayfire-0.9.0/src/core/seat/input-manager.cpp
+@@ -30,7 +30,7 @@ static std::unique_ptr<wf::input_device_
+       case WLR_INPUT_DEVICE_POINTER:
+         return std::make_unique<wf::pointing_device_t>(device);
+ 
+-      case WLR_INPUT_DEVICE_TABLET_TOOL:
++      case WLR_INPUT_DEVICE_TABLET:
+         return std::make_unique<wf::tablet_t>(
+             wf::get_core_impl().seat->priv->cursor->cursor, device);
+ 
+--- wayfire-0.9.0.orig/src/core/seat/pointer.cpp
++++ wayfire-0.9.0/src/core/seat/pointer.cpp
+@@ -102,7 +102,7 @@ void wf::pointer_t::send_leave_to_focus(
+                 wlr_pointer_button_event event;
+                 event.pointer   = NULL;
+                 event.button    = button;
+-                event.state     = WLR_BUTTON_RELEASED;
++                event.state     = WL_POINTER_BUTTON_STATE_RELEASED;
+                 event.time_msec = wf::get_current_time();
+                 old_focus->pointer_interaction().handle_pointer_button(event);
+             }
+@@ -213,7 +213,7 @@ void wf::pointer_t::handle_pointer_butto
+     seat->priv->break_mod_bindings();
+     bool handled_in_binding = (mode != input_event_processing_mode_t::FULL);
+ 
+-    if (ev->state == WLR_BUTTON_PRESSED)
++    if (ev->state == WL_POINTER_BUTTON_STATE_PRESSED)
+     {
+         count_pressed_buttons++;
+         if (count_pressed_buttons == 1)
+@@ -266,12 +266,12 @@ void wf::pointer_t::send_button(wlr_poin
+ 
+     if (cursor_focus)
+     {
+-        if ((ev->state == WLR_BUTTON_PRESSED) && cursor_focus)
++        if ((ev->state == WL_POINTER_BUTTON_STATE_PRESSED) && cursor_focus)
+         {
+             LOGC(POINTER, "normal button press ", ev->button);
+             this->currently_sent_buttons.insert(ev->button);
+             cursor_focus->pointer_interaction().handle_pointer_button(*ev);
+-        } else if ((ev->state == WLR_BUTTON_RELEASED) &&
++        } else if ((ev->state == WL_POINTER_BUTTON_STATE_RELEASED) &&
+                    (currently_sent_buttons.count(ev->button) || cursor_focus->wants_raw_input()))
+         {
+             LOGC(POINTER, "normal button release ", ev->button);
+@@ -355,7 +355,7 @@ void wf::pointer_t::handle_pointer_axis(
+     }
+ 
+     /* Calculate speed settings */
+-    double mult = ev->source == WLR_AXIS_SOURCE_FINGER ?
++    double mult = ev->source == WL_POINTER_AXIS_SOURCE_FINGER ?
+         wf::pointing_device_t::config.touchpad_scroll_speed :
+         wf::pointing_device_t::config.mouse_scroll_speed;
+ 
+--- wayfire-0.9.0.orig/src/core/seat/seat.cpp
++++ wayfire-0.9.0/src/core/seat/seat.cpp
+@@ -338,7 +338,7 @@ wf::seat_t::seat_t(wl_display *display,
+ 
+           case WLR_INPUT_DEVICE_TOUCH:
+           case WLR_INPUT_DEVICE_POINTER:
+-          case WLR_INPUT_DEVICE_TABLET_TOOL:
++          case WLR_INPUT_DEVICE_TABLET:
+             this->priv->cursor->add_new_device(ev->device->get_wlr_handle());
+             break;
+ 
+--- wayfire-0.9.0.orig/src/core/seat/tablet.cpp
++++ wayfire-0.9.0/src/core/seat/tablet.cpp
+@@ -519,7 +519,7 @@ void wf::tablet_pad_t::select_default_to
+             return;
+         }
+ 
+-        if (dev->get_wlr_handle()->type != WLR_INPUT_DEVICE_TABLET_TOOL)
++        if (dev->get_wlr_handle()->type != WLR_INPUT_DEVICE_TABLET)
+         {
+             continue;
+         }
+--- wayfire-0.9.0.orig/src/core/seat/touch.cpp
++++ wayfire-0.9.0/src/core/seat/touch.cpp
+@@ -10,6 +10,21 @@
+ #include "wayfire/util.hpp"
+ #include "wayfire/output-layout.hpp"
+ 
++class touch_timer_adapter_t : public wf::touch::timer_interface_t
++{
++  public:
++    wf::wl_timer<false> timer;
++    void set_timeout(uint32_t msec, std::function<void()> handler)
++    {
++        timer.set_timeout(msec, handler);
++    }
++
++    void reset()
++    {
++        timer.disconnect();
++    }
++};
++
+ wf::touch_interface_t::touch_interface_t(wlr_cursor *cursor, wlr_seat *seat,
+     input_surface_selector_t surface_at)
+ {
+@@ -129,6 +144,7 @@ wf::scene::node_ptr wf::touch_interface_
+ void wf::touch_interface_t::add_touch_gesture(
+     nonstd::observer_ptr<touch::gesture_t> gesture)
+ {
++    gesture->set_timer(std::make_unique<touch_timer_adapter_t>());
+     this->gestures.emplace_back(gesture);
+ }
+ 
+@@ -322,6 +338,7 @@ class multi_action_t : public gesture_ac
+     bool pinch;
+     double threshold;
+     bool last_pinch_was_pinch_in = false;
++    double move_tolerance = 1e9;
+ 
+     uint32_t target_direction = 0;
+     int32_t cnt_fingers = 0;
+@@ -329,7 +346,7 @@ class multi_action_t : public gesture_ac
+     action_status_t update_state(const gesture_state_t& state,
+         const gesture_event_t& event) override
+     {
+-        if (event.time - this->start_time > this->get_duration())
++        if (event.type == wf::touch::EVENT_TYPE_TIMEOUT)
+         {
+             return wf::touch::ACTION_STATUS_CANCELLED;
+         }
+@@ -355,7 +372,7 @@ class multi_action_t : public gesture_ac
+ 
+         if (this->pinch)
+         {
+-            if (glm::length(state.get_center().delta()) >= get_move_tolerance())
++            if (glm::length(state.get_center().delta()) >= move_tolerance)
+             {
+                 return ACTION_STATUS_CANCELLED;
+             }
+@@ -384,8 +401,7 @@ class multi_action_t : public gesture_ac
+ 
+         for (auto& finger : state.fingers)
+         {
+-            if (finger.second.get_incorrect_drag_distance(this->target_direction) >
+-                this->get_move_tolerance())
++            if (finger.second.get_incorrect_drag_distance(this->target_direction) > this->move_tolerance)
+             {
+                 return ACTION_STATUS_CANCELLED;
+             }
+@@ -471,19 +487,19 @@ void wf::touch_interface_t::add_default_
+     auto swipe = std::make_unique<multi_action_t>(false,
+         0.75 * MAX_SWIPE_DISTANCE / sensitivity);
+     swipe->set_duration(GESTURE_BASE_DURATION * sensitivity);
+-    swipe->set_move_tolerance(SWIPE_INCORRECT_DRAG_TOLERANCE * sensitivity);
++    swipe->move_tolerance = SWIPE_INCORRECT_DRAG_TOLERANCE * sensitivity;
+ 
+     const double pinch_thresh = 1.0 + (PINCH_THRESHOLD - 1.0) / sensitivity;
+     auto pinch = std::make_unique<multi_action_t>(true, pinch_thresh);
+     pinch->set_duration(GESTURE_BASE_DURATION * 1.5 * sensitivity);
+-    pinch->set_move_tolerance(PINCH_INCORRECT_DRAG_TOLERANCE * sensitivity);
++    pinch->move_tolerance = PINCH_INCORRECT_DRAG_TOLERANCE * sensitivity;
+ 
+     // Edge swipe needs a quick release to be considered edge swipe
+     auto edge_swipe = std::make_unique<multi_action_t>(false,
+         MAX_SWIPE_DISTANCE / sensitivity);
+     auto edge_release = std::make_unique<wf::touch::touch_action_t>(1, false);
+     edge_swipe->set_duration(GESTURE_BASE_DURATION * sensitivity);
+-    edge_swipe->set_move_tolerance(SWIPE_INCORRECT_DRAG_TOLERANCE * sensitivity);
++    edge_swipe->move_tolerance = SWIPE_INCORRECT_DRAG_TOLERANCE * sensitivity;
+     // The release action needs longer duration to handle the case where the
+     // gesture is actually longer than the max distance.
+     edge_release->set_duration(GESTURE_BASE_DURATION * 1.5 * sensitivity);
+--- wayfire-0.9.0.orig/src/core/seat/touch.hpp
++++ wayfire-0.9.0/src/core/seat/touch.hpp
+@@ -5,7 +5,6 @@
+ #include <wayfire/touch/touch.hpp>
+ #include "wayfire/scene-input.hpp"
+ #include "wayfire/util.hpp"
+-#include "wayfire/view.hpp"
+ #include <wayfire/signal-definitions.hpp>
+ 
+ // TODO: tests
+--- wayfire-0.9.0.orig/src/core/wm.cpp
++++ wayfire-0.9.0/src/core/wm.cpp
+@@ -23,6 +23,8 @@ static void idle_shutdown(void *data)
+ 
+ void wayfire_exit::init()
+ {
++    wf::option_wrapper_t<wf::keybinding_t> wayifre_exit_binding{"core/exit"};
++
+     key = [] (const wf::keybinding_t&)
+     {
+         auto output_impl = static_cast<wf::output_impl_t*>(wf::get_core().seat->get_active_output());
+@@ -35,8 +37,7 @@ void wayfire_exit::init()
+         return true;
+     };
+ 
+-    output->add_key(wf::create_option_string<wf::keybinding_t>(
+-        "<ctrl> <alt> KEY_BACKSPACE"), &key);
++    output->add_key(wayifre_exit_binding, &key);
+ }
+ 
+ void wayfire_exit::fini()
+@@ -77,7 +78,7 @@ void wayfire_focus::init()
+     on_pointer_button = [=] (wf::input_event_signal<wlr_pointer_button_event> *ev)
+     {
+         if ((ev->mode == wf::input_event_processing_mode_t::IGNORE) ||
+-            (ev->event->state != WLR_BUTTON_PRESSED))
++            (ev->event->state != WL_POINTER_BUTTON_STATE_PRESSED))
+         {
+             return;
+         }
+--- wayfire-0.9.0.orig/src/main.cpp
++++ wayfire-0.9.0/src/main.cpp
+@@ -18,7 +18,8 @@
+ static void print_version()
+ {
+     std::cout << WAYFIRE_VERSION << "-" << wf::version::git_commit <<
+-        " (" __DATE__ ") branch " << wf::version::git_branch << std::endl;
++        " (" __DATE__ ") branch " << wf::version::git_branch <<
++        " wlroots-" << WLR_VERSION_STR << std::endl;
+     exit(0);
+ }
+ 
+@@ -36,6 +37,7 @@ static void print_help()
+         " -D,  --damage-debug      enable additional debug for damaged regions" <<
+         std::endl;
+     std::cout << " -R,  --damage-rerender   rerender damaged regions" << std::endl;
++    std::cout << " -l,  --legacy-wl-drm     use legacy drm for wayland clients" << std::endl;
+     std::cout << " -v,  --version           print version and exit" << std::endl;
+     exit(0);
+ }
+@@ -271,6 +273,7 @@ int main(int argc, char *argv[])
+         {"debug", optional_argument, NULL, 'd'},
+         {"damage-debug", no_argument, NULL, 'D'},
+         {"damage-rerender", no_argument, NULL, 'R'},
++        {"legacy-wl-drm", no_argument, NULL, 'l'},
+         {"help", no_argument, NULL, 'h'},
+         {"version", no_argument, NULL, 'v'},
+         {0, 0, NULL, 0}
+@@ -281,7 +284,7 @@ int main(int argc, char *argv[])
+     std::vector<std::string> extended_debug_categories;
+ 
+     int c, i;
+-    while ((c = getopt_long(argc, argv, "c:B:d::DhRv", opts, &i)) != -1)
++    while ((c = getopt_long(argc, argv, "c:B:d::DhRlv", opts, &i)) != -1)
+     {
+         switch (c)
+         {
+@@ -301,6 +304,10 @@ int main(int argc, char *argv[])
+             runtime_config.no_damage_track = true;
+             break;
+ 
++          case 'l':
++            runtime_config.legacy_wl_drm = true;
++            break;
++
+           case 'h':
+             print_help();
+             break;
+@@ -373,7 +380,7 @@ int main(int argc, char *argv[])
+     /** TODO: move this to core_impl constructor */
+     core.display = display;
+     core.ev_loop = wl_display_get_event_loop(core.display);
+-    core.backend = wlr_backend_autocreate(core.display, &core.session);
++    core.backend = wlr_backend_autocreate(core.ev_loop, &core.session);
+ 
+     int drm_fd = wlr_backend_get_drm_fd(core.backend);
+     if (drm_fd < 0)
+--- wayfire-0.9.0.orig/src/main.hpp
++++ wayfire-0.9.0/src/main.hpp
+@@ -4,6 +4,7 @@
+ extern struct wf_runtime_config
+ {
+     bool no_damage_track = false;
++    bool legacy_wl_drm   = false;
+     bool damage_debug    = false;
+ } runtime_config;
+ 
+--- wayfire-0.9.0.orig/src/meson.build
++++ wayfire-0.9.0/src/meson.build
+@@ -147,7 +147,7 @@ public_api_requirements = [
+     wayland_server,
+     pixman,
+     # These might be subprojects so we need to pass them as strings
+-    'wlroots',
++    'wlroots-0.18',
+     'wf-config',
+ ]
+ 
+--- wayfire-0.9.0.orig/src/output/render-manager.cpp
++++ wayfire-0.9.0/src/output/render-manager.cpp
+@@ -1100,9 +1100,9 @@ class wf::render_manager::impl
+         }
+     }
+ 
+-    void update_bound_output()
++    void update_bound_output(wlr_buffer *buffer)
+     {
+-        int current_fb = wlr_gles2_renderer_get_current_fbo(output->handle->renderer);
++        int current_fb = wlr_gles2_renderer_get_buffer_fbo(output->handle->renderer, buffer);
+         bind_output(current_fb);
+ 
+         postprocessing->set_output_framebuffer(current_fb);
+@@ -1137,10 +1137,8 @@ class wf::render_manager::impl
+         }
+ 
+         /* Part 2: call the renderer, which sets swap_damage and draws the scenegraph */
+-        wlr_renderer_begin_with_buffer(output->handle->renderer, next_frame->buffer);
+-        update_bound_output();
++        update_bound_output(next_frame->buffer);
+         render_output();
+-        wlr_renderer_end(wf::get_core().renderer);
+ 
+         /* Part 3: overlay effects */
+         effects->run_effects(OUTPUT_EFFECT_OVERLAY);
+@@ -1164,9 +1162,8 @@ class wf::render_manager::impl
+          * We render software cursors after everything else
+          * for consistency with hardware cursor planes */
+         OpenGL::render_begin();
+-        wlr_renderer_begin_with_buffer(output->handle->renderer, next_frame->buffer);
+-        wlr_output_render_software_cursors(output->handle, swap_damage.to_pixman());
+-        wlr_renderer_end(wf::get_core().renderer);
++        wlr_output_add_software_cursors_to_render_pass(output->handle, next_frame->render_pass,
++            swap_damage.to_pixman());
+         OpenGL::render_end();
+ 
+         /* Part 6: finalize frame: swap buffers, send frame_done, etc */
+--- wayfire-0.9.0.orig/src/view/wlr-subsurface-controller.cpp
++++ wayfire-0.9.0/src/view/wlr-subsurface-controller.cpp
+@@ -90,6 +90,9 @@ bool wf::wlr_subsurface_root_node_t::upd
+     } else if (changed)
+     {
+         set_offset(offset);
++    } else if (apply_damage)
++    {
++        scene::damage_node(this, get_bounding_box());
+     }
+ 
+     return changed;
+--- wayfire-0.9.0.orig/src/view/wlr-surface-node.cpp
++++ wayfire-0.9.0/src/view/wlr-surface-node.cpp
+@@ -361,8 +361,7 @@ class wf::scene::wlr_surface_node_t::wlr
+     {
+         if (self->surface)
+         {
+-            wlr_presentation_surface_scanned_out_on_output(wf::get_core_impl().protocols.presentation,
+-                self->surface, output->handle);
++            wlr_presentation_surface_scanned_out_on_output(self->surface, output->handle);
+         }
+     }
+ 
+@@ -394,15 +393,18 @@ class wf::scene::wlr_surface_node_t::wlr
+             return direct_scanout::OCCLUSION;
+         }
+ 
+-        wlr_presentation_surface_scanned_out_on_output(
+-            wf::get_core().protocols.presentation, wlr_surf, output->handle);
+-        wlr_output_attach_buffer(output->handle, &wlr_surf->buffer->base);
++        wlr_output_state state;
++        wlr_output_state_init(&state);
++        wlr_output_state_set_buffer(&state, &wlr_surf->buffer->base);
++        wlr_presentation_surface_scanned_out_on_output(wlr_surf, output->handle);
+ 
+-        if (wlr_output_commit(output->handle))
++        if (wlr_output_commit_state(output->handle, &state))
+         {
++            wlr_output_state_finish(&state);
+             return direct_scanout::SUCCESS;
+         } else
+         {
++            wlr_output_state_finish(&state);
+             return direct_scanout::OCCLUSION;
+         }
+     }
+--- wayfire-0.9.0.orig/src/view/wlr-surface-pointer-interaction.hpp
++++ wayfire-0.9.0/src/view/wlr-surface-pointer-interaction.hpp
+@@ -222,7 +222,7 @@ class wlr_surface_pointer_interaction_t
+     {
+         auto seat = wf::get_core_impl().get_current_seat();
+         wlr_seat_pointer_notify_axis(seat, ev.time_msec, ev.orientation,
+-            ev.delta, ev.delta_discrete, ev.source);
++            ev.delta, ev.delta_discrete, ev.source, WL_POINTER_AXIS_RELATIVE_DIRECTION_IDENTICAL);
+     }
+ 
+     void handle_pointer_leave() final
+--- wayfire-0.9.0.orig/src/view/xdg-shell.cpp
++++ wayfire-0.9.0/src/view/xdg-shell.cpp
+@@ -408,7 +408,7 @@ class xdg_popup_controller_t
+             view->destroy();
+             delete this;
+         });
+-        on_destroy.connect(&popup->base->events.destroy);
++        on_destroy.connect(&popup->events.destroy);
+         view = wayfire_xdg_popup::create(popup);
+     }
+ 
+@@ -433,21 +433,22 @@ static wf::wl_listener_wrapper on_xdg_cr
+ 
+ void wf::init_xdg_shell()
+ {
+-    xdg_handle = wlr_xdg_shell_create(wf::get_core().display, 3);
++    xdg_handle = wlr_xdg_shell_create(wf::get_core().display, XDG_TOPLEVEL_STATE_SUSPENDED_SINCE_VERSION);
+     if (xdg_handle)
+     {
+         on_xdg_created.set_callback([&] (void *data)
+         {
+-            auto surf = static_cast<wlr_xdg_surface*>(data);
++            auto surf = static_cast<wlr_xdg_toplevel*>(data);
+             wf::new_xdg_surface_signal new_xdg_surf;
+-            new_xdg_surf.surface = surf;
+-            wf::get_core().emit(&new_xdg_surf);
+-            if (new_xdg_surf.use_default_implementation && (surf->role == WLR_XDG_SURFACE_ROLE_TOPLEVEL))
++            new_xdg_surf.surface = surf->base;
++            wf::get_core().emit(
++                &new_xdg_surf);
++            if (new_xdg_surf.use_default_implementation && (surf->base->role == WLR_XDG_SURFACE_ROLE_TOPLEVEL))
+             {
+-                default_handle_new_xdg_toplevel(surf->toplevel);
++                default_handle_new_xdg_toplevel(surf);
+             }
+         });
+-        on_xdg_created.connect(&xdg_handle->events.new_surface);
++        on_xdg_created.connect(&xdg_handle->events.new_toplevel);
+     }
+ }
+ 
+--- wayfire-0.9.0.orig/src/view/xdg-shell/xdg-toplevel-view.cpp
++++ wayfire-0.9.0/src/view/xdg-shell/xdg-toplevel-view.cpp
+@@ -49,7 +49,7 @@ wf::xdg_toplevel_view_base_t::xdg_toplev
+         wf::view_implementation::emit_ping_timeout_signal(self());
+     });
+ 
+-    on_destroy.connect(&xdg_toplevel->base->events.destroy);
++    on_destroy.connect(&xdg_toplevel->events.destroy);
+     on_new_popup.connect(&xdg_toplevel->base->events.new_popup);
+     on_ping_timeout.connect(&xdg_toplevel->base->events.ping_timeout);
+     on_set_title.connect(&xdg_toplevel->events.set_title);
+@@ -556,7 +556,7 @@ class xdg_toplevel_controller_t
+     xdg_toplevel_controller_t(wlr_xdg_toplevel *toplevel)
+     {
+         on_destroy.set_callback([=] (auto) { delete this; });
+-        on_destroy.connect(&toplevel->base->events.destroy);
++        on_destroy.connect(&toplevel->events.destroy);
+         view = wf::xdg_toplevel_view_t::create(toplevel);
+ 
+         on_map.set_callback([=] (void*)
+--- wayfire-0.9.0.orig/src/view/xdg-shell/xdg-toplevel.cpp
++++ wayfire-0.9.0/src/view/xdg-shell/xdg-toplevel.cpp
+@@ -152,6 +152,12 @@ void wf::xdg_toplevel_t::handle_surface_
+ {
+     pending_state.merge_state(toplevel->base->surface);
+ 
++    if (this->toplevel->base->initial_commit)
++    {
++        wlr_xdg_surface_schedule_configure(this->toplevel->base);
++        return;
++    }
++
+     const bool is_committed = wf::get_core().tx_manager->is_object_committed(shared_from_this());
+     if (is_committed)
+     {
+--- wayfire-0.9.0.orig/src/view/xwayland.cpp
++++ wayfire-0.9.0/src/view/xwayland.cpp
+@@ -297,7 +297,10 @@ void wf::xwayland_bring_to_front(wlr_sur
+ 
+     if (wlr_xwayland_surface *xwayland_surface = wlr_xwayland_surface_try_from_wlr_surface(surface))
+     {
+-        wlr_xwayland_surface_restack(xwayland_surface, NULL, XCB_STACK_MODE_ABOVE);
++        if (!xwayland_surface->override_redirect)
++        {
++            wlr_xwayland_surface_restack(xwayland_surface, NULL, XCB_STACK_MODE_ABOVE);
++        }
+     }
+ 
+ #endif
